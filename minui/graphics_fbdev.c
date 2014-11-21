@@ -75,6 +75,10 @@ static void set_displayed_framebuffer(unsigned n)
     if (ioctl(fb_fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
         perror("active fb swap failed");
     }
+	
+	if (ioctl(fb_fd,RK_FBIOSET_CONFIG_DONE, NULL) < 0) {
+    	perror("set config done failed");
+    }
     displayed_buffer = n;
 }
 
@@ -117,11 +121,24 @@ static gr_surface fbdev_init(minui_backend* backend) {
            "  vi.bits_per_pixel = %d\n"
            "  vi.red.offset   = %3d   .length = %3d\n"
            "  vi.green.offset = %3d   .length = %3d\n"
-           "  vi.blue.offset  = %3d   .length = %3d\n",
+           "  vi.blue.offset  = %3d   .length = %3d\n"
+		   "  fi.line_length = %d\n",
            vi.bits_per_pixel,
            vi.red.offset, vi.red.length,
            vi.green.offset, vi.green.length,
-           vi.blue.offset, vi.blue.length);
+           vi.blue.offset, vi.blue.length,
+		   fi.line_length);
+		   
+	//GGL_PIXEL_FORMAT_RGBX_8888
+	vi.red.offset     = 24;
+    vi.red.length     = 8;
+    vi.green.offset   = 16;
+    vi.green.length   = 8;
+    vi.blue.offset    = 8;
+    vi.blue.length    = 8;
+    vi.transp.offset  = 0;
+    vi.transp.length  = 8;
+	vi.bits_per_pixel = 32;
 
     bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (bits == MAP_FAILED) {
@@ -134,7 +151,7 @@ static gr_surface fbdev_init(minui_backend* backend) {
 
     gr_framebuffer[0].width = vi.xres;
     gr_framebuffer[0].height = vi.yres;
-    gr_framebuffer[0].row_bytes = fi.line_length;
+    gr_framebuffer[0].row_bytes = vi.xres * 4;
     gr_framebuffer[0].pixel_bytes = vi.bits_per_pixel / 8;
     gr_framebuffer[0].data = bits;
     memset(gr_framebuffer[0].data, 0, gr_framebuffer[0].height * gr_framebuffer[0].row_bytes);
@@ -169,7 +186,7 @@ static gr_surface fbdev_init(minui_backend* backend) {
     fb_fd = fd;
     set_displayed_framebuffer(0);
 
-    printf("framebuffer: %d (%d x %d)\n", fb_fd, gr_draw->width, gr_draw->height);
+    printf("framebuffer: %d (%d x %d) double_buffer %d\n", fb_fd, gr_draw->width, gr_draw->height, double_buffered);
 
     fbdev_blank(backend, true);
     fbdev_blank(backend, false);

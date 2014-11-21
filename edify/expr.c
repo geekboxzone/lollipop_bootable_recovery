@@ -318,6 +318,34 @@ Value* GreaterThanIntFn(const char* name, State* state,
     return LessThanIntFn(name, state, 2, temp);
 }
 
+Value* PickNumFromStringFn(const char* name, State* state, int argc, Expr* argv[]) {
+	if (argc != 1) {
+	        free(state->errmsg);
+	        state->errmsg = strdup("pick_num expects 1 arguments");
+	        return NULL;
+	    }
+
+	    char* targetString;
+	    if (ReadArgs(state, argv, 1, &targetString) < 0) return NULL;
+
+	    char* result = NULL;
+	    int length = strlen(targetString);
+	    result = (char*)malloc(length + 1);
+	    memset((void*)result, 0, length + 1);
+	    char* cur = targetString;
+	    char* to = result;
+
+	    while(*cur != '\0') {
+	    	if(*cur >= '0' && *cur <= '9') {
+	    		*to = *cur;
+	    		to++;
+	    	}
+	    	cur++;
+	    }
+
+	    return StringValue(result);
+}
+
 Value* Literal(const char* name, State* state, int argc, Expr* argv[]) {
     return StringValue(strdup(name));
 }
@@ -390,6 +418,7 @@ void RegisterBuiltins() {
 
     RegisterFunction("less_than_int", LessThanIntFn);
     RegisterFunction("greater_than_int", GreaterThanIntFn);
+    RegisterFunction("pick_num", PickNumFromStringFn);
 }
 
 

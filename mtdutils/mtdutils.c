@@ -134,8 +134,14 @@ mtd_scan_partitions()
         mtdname[0] = '\0';
         mtdnum = -1;
 
+#ifndef USE_OLD_NAND_DRIVER
+        matches = sscanf(bufp, "rknand%d: %x %x \"%63[^\"]",
+                &mtdnum, &mtdsize, &mtderasesize, mtdname);
+        printf("matches %d, mtdnum %d, mtdsize %X, mtderasesize %X, mtdname %s\n", matches, mtdnum, mtdsize, mtderasesize, mtdname);
+#else
         matches = sscanf(bufp, "mtd%d: %x %x \"%63[^\"]",
                 &mtdnum, &mtdsize, &mtderasesize, mtdname);
+#endif
         /* This will fail on the first line, which just contains
          * column headers.
          */
@@ -172,6 +178,10 @@ bail:
     return -1;
 }
 
+int mtd_get_partition_index(MtdPartition *partition)
+{
+	return partition->device_index;
+}
 const MtdPartition *
 mtd_find_partition_by_name(const char *name)
 {
@@ -180,6 +190,7 @@ mtd_find_partition_by_name(const char *name)
         for (i = 0; i < g_mtd_state.partitions_allocd; i++) {
             MtdPartition *p = &g_mtd_state.partitions[i];
             if (p->device_index >= 0 && p->name != NULL) {
+                printf ("find_partition : p->name %s, name %s\n", p->name, name);
                 if (strcmp(p->name, name) == 0) {
                     return p;
                 }
@@ -197,7 +208,12 @@ mtd_mount_partition(const MtdPartition *partition, const char *mount_point,
     char devname[64];
     int rv = -1;
 
+#ifndef USE_OLD_NAND_DRIVER
+    sprintf(devname, "/dev/block/rknand_%s", partition->name);
+    printf(" %d : devname : %s\n", __LINE__, devname);
+#else
     sprintf(devname, "/dev/block/mtdblock%d", partition->device_index);
+#endif
     if (!read_only) {
         rv = mount(devname, mount_point, filesystem, flags, NULL);
     }
@@ -239,18 +255,41 @@ mtd_partition_info(const MtdPartition *partition,
         size_t *total_size, size_t *erase_size, size_t *write_size)
 {
     char mtddevname[32];
+#ifndef USE_OLD_NAND_DRIVER
+    sprintf(mtddevname, "/dev/block/rknand_%s", partition->name);
+    printf(" %d : devname : %s\n", __LINE__, mtddevname);
+#else
     sprintf(mtddevname, "/dev/mtd/mtd%d", partition->device_index);
+#endif
     int fd = open(mtddevname, O_RDONLY);
     if (fd < 0) return -1;
 
+    printf(" %d : devname : %s\n", __LINE__, mtddevname);
     struct mtd_info_user mtd_info;
+#ifdef USE_OLD_NAND_DRIVER
     int ret = ioctl(fd, MEMGETINFO, &mtd_info);
     close(fd);
     if (ret < 0) return -1;
+    printf(" %d : devname : %s\n", __LINE__, mtddevname);
 
     if (total_size != NULL) *total_size = mtd_info.size;
-    if (erase_size != NULL) *erase_size = mtd_info.erasesize;
-    if (write_size != NULL) *write_size = mtd_info.writesize;
+    if (erase_size != NULL)
+        *erase_size = (mtd_info.erasesize>32*512)?mtd_info.erasesize:32*512;
+    
+    if (write_size != NULL)
+        *write_size = (mtd_info.erasesize>32*512)?mtd_info.erasesize:32*512;
+    //if (erase_size != NULL) *erase_size = mtd_info.erasesize;
+    //if (write_size != NULL) *write_size = mtd_info.writesize;
+#else
+    if (total_size != NULL)
+        *total_size = partition->size;
+    
+    if (erase_size != NULL)
+        *erase_size = (partition->erase_size > 32*512) ? partition->erase_size : 32*512;
+
+    if (write_size != NULL)
+        *write_size = (partition->erase_size > 32*512) ? partition->erase_size : 32*512;
+#endif
     return 0;
 }
 
@@ -266,7 +305,12 @@ MtdReadContext *mtd_read_partition(const MtdPartition *partition)
     }
 
     char mtddevname[32];
+#ifndef USE_OLD_NAND_DRIVER
+    sprintf(mtddevname, "/dev/block/rknand_%s", partition->name);
+    printf(" %d : devname : %s\n", __LINE__, mtddevname);
+#else
     sprintf(mtddevname, "/dev/mtd/mtd%d", partition->device_index);
+#endif
     ctx->fd = open(mtddevname, O_RDONLY);
     if (ctx->fd < 0) {
         free(ctx->buffer);
@@ -287,6 +331,15 @@ void mtd_read_skip_to(const MtdReadContext* ctx, size_t offset) {
 
 static int read_block(const MtdPartition *partition, int fd, char *data)
 {
+    ssize_t size = partition->erase_size;
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    if (read(fd, data, size) != size) {
+	    fprintf(stderr, "mtd: read error (%s)\n", strerror(errno));
+	    errno = ENOSPC;
+	    return -1;
+	}
+	return 0;
+/*  RK platform no used
     struct mtd_ecc_stats before, after;
     if (ioctl(fd, ECCGETSTATS, &before)) {
         printf("mtd: ECCGETSTATS error (%s)\n", strerror(errno));
@@ -324,6 +377,7 @@ static int read_block(const MtdPartition *partition, int fd, char *data)
 
     errno = ENOSPC;
     return -1;
+*/
 }
 
 ssize_t mtd_read_data(MtdReadContext *ctx, char *data, size_t len)
@@ -382,7 +436,12 @@ MtdWriteContext *mtd_write_partition(const MtdPartition *partition)
     }
 
     char mtddevname[32];
+#ifndef USE_OLD_NAND_DRIVER
+    sprintf(mtddevname, "/dev/block/rknand_%s", partition->name);
+    printf(" %d : devname : %s\n", __LINE__, mtddevname);
+#else
     sprintf(mtddevname, "/dev/mtd/mtd%d", partition->device_index);
+#endif
     ctx->fd = open(mtddevname, O_RDWR);
     if (ctx->fd < 0) {
         free(ctx->buffer);
@@ -406,6 +465,20 @@ static void add_bad_block_offset(MtdWriteContext *ctx, off_t pos) {
 
 static int write_block(MtdWriteContext *ctx, const char *data)
 {
+    const MtdPartition *partition = ctx->partition;
+    int fd = ctx->fd;
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    if (pos == (off_t) -1) return 1;
+
+    ssize_t size = partition->erase_size;
+
+	if (write(fd, data, size) != size) {
+	    fprintf(stderr,"mtd: write error (%s)\n", strerror(errno));
+	    errno = ENOSPC;
+	    return -1;
+	}
+	return 0;
+/* RK platform no used
     const MtdPartition *partition = ctx->partition;
     int fd = ctx->fd;
 
@@ -471,6 +544,7 @@ static int write_block(MtdWriteContext *ctx, const char *data)
     // Ran out of space on the device
     errno = ENOSPC;
     return -1;
+*/
 }
 
 ssize_t mtd_write_data(MtdWriteContext *ctx, const char *data, size_t len)
@@ -523,6 +597,12 @@ off_t mtd_erase_blocks(MtdWriteContext *ctx, int blocks)
     }
 
     // Erase the specified number of blocks
+    memset(ctx->buffer, 0xFF, ctx->partition->erase_size);
+    while (blocks-- > 0) {
+	if (write_block(ctx, ctx->buffer)) 
+		return -1;
+	}
+/* RK platform no used
     while (blocks-- > 0) {
         loff_t bpos = pos;
         if (ioctl(ctx->fd, MEMGETBADBLOCK, &bpos) > 0) {
@@ -539,7 +619,7 @@ off_t mtd_erase_blocks(MtdWriteContext *ctx, int blocks)
         }
         pos += ctx->partition->erase_size;
     }
-
+*/
     return pos;
 }
 

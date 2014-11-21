@@ -39,6 +39,7 @@ LOCAL_SRC_FILES := \
     asn1_decoder.cpp \
     verifier.cpp \
     adb_install.cpp \
+    rkimage.cpp	    \
     fuse_sdcard_provider.c
 
 LOCAL_MODULE := recovery
@@ -52,6 +53,7 @@ endif
 RECOVERY_API_VERSION := 3
 RECOVERY_FSTAB_VERSION := 2
 LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
+LOCAL_CFLAGS += -D_FILE_OFFSET_BITS=64
 LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_STATIC_LIBRARIES := \
@@ -71,12 +73,49 @@ LOCAL_STATIC_LIBRARIES := \
     libselinux \
     libstdc++ \
     libm \
-    libc
+    libc \
+    libedify \
+    libapplypatch \
+    librsa \
+    libcrc32 \
+    librk_emmcutils  
 
 ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     LOCAL_CFLAGS += -DUSE_EXT4
     LOCAL_C_INCLUDES += system/extras/ext4_utils system/vold
     LOCAL_STATIC_LIBRARIES += libext4_utils_static libz
+endif
+
+ifeq ($(RECOVERY_UPDATEIMG_RSA_CHECK), true)
+$(warning recovery use updateimg rsa check!)
+LOCAL_CFLAGS += -DUSE_RSA_CHECK
+else
+$(warning recovery use updateimg crc32 check!)
+endif
+
+ifeq ($(RECOVERY_BOARD_ID), true)
+$(warning recovery use board id!)
+LOCAL_CFLAGS += -DUSE_BOARD_ID
+LOCAL_STATIC_LIBRARIES += libboard_id_recovery libxml2_recovery
+else
+$(warning recovery not use board id!)
+endif
+
+ifeq ($(RECOVERY_WITH_RADICAL_UPDATE), true)
+$(warning recovery with radical_update!)
+LOCAL_CFLAGS += -DUSE_RADICAL_UPDATE
+LOCAL_STATIC_LIBRARIES += libradical_update_recovery libxml2_recovery
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/radical_update/inc
+else
+$(warning recovery without radical_update!)
+endif
+# LOCAL_CFLAGS += -E
+
+ifeq ($(strip $(TARGET_BOARD_HARDWARE)),rk30board)
+LOCAL_CFLAGS += -DTARGET_RK30
+endif
+ifeq ($(strip $(TARGET_BOARD_HARDWARE)),rk2928board)
+LOCAL_CFLAGS += -DTARGET_RK30
 endif
 
 # This binary is in the recovery ramdisk, which is otherwise a copy of root.
@@ -85,12 +124,13 @@ endif
 # TODO: Build the ramdisk image in a more principled way.
 LOCAL_MODULE_TAGS := eng
 
-ifeq ($(TARGET_RECOVERY_UI_LIB),)
+#ifeq ($(TARGET_RECOVERY_UI_LIB),)
   LOCAL_SRC_FILES += default_device.cpp
-else
-  LOCAL_STATIC_LIBRARIES += $(TARGET_RECOVERY_UI_LIB)
-endif
+#else
+#  LOCAL_STATIC_LIBRARIES += $(TARGET_RECOVERY_UI_LIB)
+#endif
 
+LOCAL_CFLAGS += -fpermissive
 LOCAL_C_INCLUDES += system/extras/ext4_utils
 LOCAL_C_INCLUDES += external/openssl/include
 
@@ -134,4 +174,11 @@ include $(LOCAL_PATH)/minui/Android.mk \
     $(LOCAL_PATH)/edify/Android.mk \
     $(LOCAL_PATH)/uncrypt/Android.mk \
     $(LOCAL_PATH)/updater/Android.mk \
-    $(LOCAL_PATH)/applypatch/Android.mk
+    $(LOCAL_PATH)/emmcutils/Android.mk	\
+    $(LOCAL_PATH)/applypatch/Android.mk \
+    $(LOCAL_PATH)/rsa/Android.mk	\
+    $(LOCAL_PATH)/crc/Android.mk	\
+    $(LOCAL_PATH)/board_id/Android.mk	\
+    $(LOCAL_PATH)/libxml2/Android.mk \
+    $(LOCAL_PATH)/radical_update/Android.mk
+    
