@@ -209,6 +209,7 @@ int res_create_display_surface(const char* name, gr_surface* pSurface) {
     result = open_png(name, &png_ptr, &info_ptr, &width, &height, &channels);
     if (result < 0) return result;
 
+	printf("load png %s, width %d height %d channels %d\n", name, width, height, channels);
     surface = init_display_surface(width, height);
     if (surface == NULL) {
         result = -8;
@@ -245,6 +246,7 @@ int res_create_multi_display_surface(const char* name, int* frames, gr_surface**
 
     result = open_png(name, &png_ptr, &info_ptr, &width, &height, &channels);
     if (result < 0) return result;
+	printf("load png %s, width %d height %d channels %d\n", name, width, height, channels);
 
     *frames = 1;
     png_textp text;
