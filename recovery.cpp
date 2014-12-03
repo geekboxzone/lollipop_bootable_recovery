@@ -1020,13 +1020,12 @@ load_locale_from_cache() {
 
 void SureMetadataMount() {
     if (ensure_path_mounted("/metadata")) {
-        printf("mount cache fail,so formate...\n");
+        printf("mount metadata fail,so formate...\n");
         tmplog_offset = 0;
         format_volume("/metadata");
         ensure_path_mounted("/metadata");
     }
 }
-
 
 void SureCacheMount() {
 	if(ensure_path_mounted("/cache")) {
@@ -1600,8 +1599,6 @@ main(int argc, char **argv) {
     }
 
     device->StartRecovery();
-    SureCacheMount();
-    SureMetadataMount();
 
     //sdcard may not ready,so wait a feel seconds.
     int i;
@@ -1629,6 +1626,9 @@ main(int argc, char **argv) {
     }
 
     get_auto_sdcard_update_path(&auto_sdcard_update_path);
+
+	SureCacheMount();
+	SureMetadataMount();
 
     char bootmode[256];
     property_get("ro.bootmode", bootmode, "unknown");

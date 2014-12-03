@@ -262,6 +262,9 @@ static int set_bootloader_message_block_rk29(const struct bootloader_message *in
         fclose(f);
         return -1;
     }
+	
+	fflush(f);
+	
     if (fclose(f) != 0) {
         LOGE("Failed closing %s\n(%s)\n", v->blk_device, strerror(errno));
         return -1;

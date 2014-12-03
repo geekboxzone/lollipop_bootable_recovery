@@ -130,13 +130,13 @@ static gr_surface fbdev_init(minui_backend* backend) {
 		   fi.line_length);
 		   
 	//GGL_PIXEL_FORMAT_RGBX_8888
-	vi.red.offset     = 24;
+	vi.red.offset     = 0;
     vi.red.length     = 8;
-    vi.green.offset   = 16;
+    vi.green.offset   = 8;
     vi.green.length   = 8;
-    vi.blue.offset    = 8;
+    vi.blue.offset    = 16;
     vi.blue.length    = 8;
-    vi.transp.offset  = 0;
+    vi.transp.offset  = 24;
     vi.transp.length  = 8;
 	vi.bits_per_pixel = 32;
 	vi.nonstd = 2;

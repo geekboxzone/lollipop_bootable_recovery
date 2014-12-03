@@ -112,7 +112,11 @@ int ensure_path_mounted(const char* path) {
         return 0;
     }
 
-    mkdir(v->mount_point, 0755);  // in case it doesn't already exist
+    result = mkdir(v->mount_point, 0755);  // in case it doesn't already exist
+    if (result!=0)
+    {
+		printf("failed to create %s dir,err=%s!\n",v->mount_point,strerror(errno));
+	}
 
     if (strcmp(v->fs_type, "yaffs2") == 0) {
         // mount an MTD partition as a YAFFS2 filesystem.
@@ -131,7 +135,7 @@ int ensure_path_mounted(const char* path) {
                        MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
         if (result == 0) return 0;
 
-        LOGE("failed to mount %s (%s)\n", v->mount_point, strerror(errno));
+        LOGE("failed to mount %s %s (%s)\n", v->mount_point, v->blk_device, strerror(errno));
         return -1;
     } else if (strcmp(v->fs_type, "vfat") == 0) {
         result = mount(v->blk_device, v->mount_point, v->fs_type,

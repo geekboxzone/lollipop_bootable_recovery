@@ -227,6 +227,7 @@ really_install_package(const char *path, int* wipe_cache, bool needs_mount, int 
     // Map the update package into memory.
     ui->Print("Opening update package...\n");
 
+	needs_mount = true;
     if (path && needs_mount) {
         if (path[0] == '@') {
             ensure_path_mounted(path+1);

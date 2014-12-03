@@ -1706,16 +1706,6 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
         }
         result = location;
 #endif
-#if TARGET_BOARD_PLATFORM == rockchip
-    } else if (strcmp(fs_type, "ext3") == 0) {
-        int status = rk_make_ext3fs(location);
-        if (status != 0) {
-            fprintf(stderr, "%s: make_ext3fs failed (%d) on %s",
-                    name, status, location);
-            result = strdup("");
-            goto done;
-        }
-        result = location;
     } else if (strcmp(fs_type, "vfat") == 0) {
 		char volume_label[256] = "\0";
 		property_get("UserVolumeLabel", volume_label, "");
@@ -1737,7 +1727,6 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
 			goto done;
 		 }
 		result = location;
-#endif
     } else {
         fprintf(stderr, "%s: unsupported fs_type \"%s\" partition_type \"%s\"",
                 name, fs_type, partition_type);
@@ -1749,73 +1738,6 @@ done:
     if (result != location) free(location);
     return StringValue(result);
 }
-
-
-Value* DeleteFn(const char* name, State* state, int argc, Expr* argv[]) {
-    char** paths = malloc(argc * sizeof(char*));
-    int i;
-    for (i = 0; i < argc; ++i) {
-        paths[i] = Evaluate(state, argv[i]);
-        if (paths[i] == NULL) {
-            int j;
-            for (j = 0; j < i; ++i) {
-                free(paths[j]);
-            }
-            free(paths);
-            return NULL;
-        }
-    }
-
-    bool recursive = (strcmp(name, "delete_recursive") == 0);
-
-    int success = 0;
-    for (i = 0; i < argc; ++i) {
-        if ((recursive ? dirUnlinkHierarchy(paths[i]) : unlink(paths[i])) == 0)
-            ++success;
-        free(paths[i]);
-    }
-    free(paths);
-
-    char buffer[10];
-    sprintf(buffer, "%d", success);
-    return StringValue(strdup(buffer));
-}
-
-// symlink target src1 src2 ...
-//    unlinks any previously existing src1, src2, etc before creating symlinks.
-Value* SymlinkFn(const char* name, State* state, int argc, Expr* argv[]) {
-    if (argc == 0) {
-        return ErrorAbort(state, "%s() expects 1+ args, got %d", name, argc);
-    }
-    char* target;
-    target = Evaluate(state, argv[0]);
-    if (target == NULL) return NULL;
-
-    char** srcs = ReadVarArgs(state, argc-1, argv+1);
-    if (srcs == NULL) {
-        free(target);
-        return NULL;
-    }
-
-    int i;
-    for (i = 0; i < argc-1; ++i) {
-        if (unlink(srcs[i]) < 0) {
-            if (errno != ENOENT) {
-                fprintf(stderr, "%s: failed to remove %s: %s\n",
-                        name, srcs[i], strerror(errno));
-            }
-        }
-        if (symlink(target, srcs[i]) < 0) {
-            fprintf(stderr, "%s: failed to symlink %s to %s: %s\n",
-                    name, srcs[i], target, strerror(errno));
-        }
-        free(srcs[i]);
-    }
-    free(srcs);
-    return StringValue(strdup(""));
-}
-
-
 
 Value* UIPrintFn(const char* name, State* state, int argc, Expr* argv[]) {
 	if (argc != 1) {
@@ -1923,9 +1845,6 @@ void RegisterInstallFunctions() {
     RegisterFunction("mount", MountFn);
     RegisterFunction("unmount", UnmountFn);
     RegisterFunction("format", FormatFn);
-    RegisterFunction("delete", DeleteFn);
-    RegisterFunction("delete_recursive", DeleteFn);
-    RegisterFunction("symlink", SymlinkFn);
     RegisterFunction("read_file", ReadFileFn);
     RegisterFunction("ui_print", UIPrintFn);
     RegisterFunction("run_program", RunProgramFn);
