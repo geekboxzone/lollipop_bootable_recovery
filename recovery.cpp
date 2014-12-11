@@ -107,6 +107,7 @@ static const char *AUTO_FACTORY_UPDATE_TAG = "/FirmwareUpdate/auto_sd_update.tag
 static const char *AUTO_FACTORY_UPDATE_PACKAGE = "/FirmwareUpdate/update.img";
 static const char *DATA_PARTITION_NAME = "userdata";
 static const char *DATABK_PARTITION_NAME = "databk";
+static const char *ERASE_ALL_FLASH_REASON = "WipeAllFlash";
 static char IN_SDCARD_ROOT[256] = "\0";
 static char EX_SDCARD_ROOT[256] = "\0";
 static char updatepath[128] = "\0";
@@ -1525,7 +1526,7 @@ main(int argc, char **argv) {
     const char *update_rkimage = NULL;
     int is_ru_pkg = 0;       // *update_package 是否是一个 ru_pkg. 
     char *auto_sdcard_update_path = NULL;
-    int wipe_data = 0, wipe_cache = 0, show_text = 0, wipe_all = 0;
+    int wipe_data = 0, wipe_cache = 0, show_text = 0, wipe_all = 0, wipe_allflash =0;
     bool just_exit = false;
     int factory_mode_en = 0;
     char *factory_mode = NULL;
@@ -1557,7 +1558,7 @@ main(int argc, char **argv) {
             break;
         }
         case 'p': shutdown_after = true; break;
-        case 'r': reason = optarg; break;
+        case 'r': {reason = optarg; if( strcmp(reason, ERASE_ALL_FLASH_REASON)==0) wipe_allflash = 1;} break;
         case '?':
             LOGE("Invalid command argument\n");
             continue;
@@ -1769,6 +1770,33 @@ main(int argc, char **argv) {
 #endif
         }
         if (wipe_all && erase_volume(IN_SDCARD_ROOT)) status = INSTALL_ERROR;
+
+#ifdef USE_BOARD_ID
+        if(wipe_allflash) {
+            LOGD("to wipe all. \n");
+            LOGD("to handle board_id for wipe_all.");
+            status = handle_board_id();
+#else
+        if(wipe_allflash) {
+#endif
+        
+        printf("resize /system \n");
+        Volume* v = volume_for_path("/system");
+        if(rk_check_and_resizefs(v->blk_device)) {
+            ui->Print("check and resize /system failed!\n");
+            status = INSTALL_ERROR;
+        }
+        
+#ifdef USE_RADICAL_UPDATE
+// #error
+        LOGD("to wipe radical_update_partition. \n");
+        if ( 0 != erase_volume("/radical_update") ) 
+        {
+            LOGE("fail to wipe radical_update_partition.");
+        }
+#endif
+}
+        if (wipe_allflash && erase_volume(IN_SDCARD_ROOT)) status = INSTALL_ERROR;
         if (erase_persistent_partition() == -1 ) status = INSTALL_ERROR;
         if (status != INSTALL_SUCCESS) ui->Print("Data wipe failed.\n");
     } else if (wipe_cache) {
