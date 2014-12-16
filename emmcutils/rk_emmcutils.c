@@ -37,7 +37,7 @@ int transformPath(const char *in, char *out) {
 	}
 
 	printf("transformPath in: %s\n", in);
-	strcpy(out, "dev/block/mtd/by-name/");
+	strcpy(out, "dev/block/platform/ff0f0000.rksdmmc/by-name/");
 	strcat(out, in);
 
 	return 0;
