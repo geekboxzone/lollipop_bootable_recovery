@@ -118,6 +118,11 @@ ifeq ($(strip $(TARGET_BOARD_HARDWARE)),rk2928board)
 LOCAL_CFLAGS += -DTARGET_RK30
 endif
 
+ifeq ($(strip $(TARGET_BOARD_PLATFORM)),rk3368)
+LOCAL_CFLAGS += -DTARGET_RK3368
+endif
+
+
 # This binary is in the recovery ramdisk, which is otherwise a copy of root.
 # It gets copied there in config/Makefile.  LOCAL_MODULE_TAGS suppresses
 # a (redundant) copy of the binary in /system/bin for user builds.

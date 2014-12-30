@@ -1495,8 +1495,14 @@ main(int argc, char **argv) {
 
     redirect_stdio(TEMPORARY_LOG_FILE);
 
+#ifdef TARGET_RK3368
+    freopen("/dev/ttyS2", "a", stdout); setbuf(stdout, NULL);
+    freopen("/dev/ttyS2", "a", stderr); setbuf(stderr, NULL);
+#else
     freopen("/dev/ttyFIQ0", "a", stdout); setbuf(stdout, NULL);
     freopen("/dev/ttyFIQ0", "a", stderr); setbuf(stderr, NULL);
+#endif
+
     // If this binary is started with the single argument "--adbd",
     // instead of being the normal recovery binary, it turns into kind
     // of a stripped-down version of adbd that only supports the
