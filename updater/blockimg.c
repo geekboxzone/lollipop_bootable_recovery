@@ -27,6 +27,7 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <time.h>
+#include <fs_mgr.h>
 #include <unistd.h>
 
 #include "applypatch/applypatch.h"
@@ -34,8 +35,12 @@
 #include "mincrypt/sha.h"
 #include "minzip/DirUtil.h"
 #include "updater.h"
+#include "emmcutils/rk_emmcutils.h"
+
 
 #define BLOCKSIZE 4096
+
+static struct fstab *fstab = NULL;
 
 // Set this to 0 to interpret 'erase' transfers to mean do a
 // BLKDISCARD ioctl (the normal behavior).  Set to 1 to interpret
@@ -245,6 +250,75 @@ static void* unzip_new_data(void* cookie) {
     return NULL;
 }
 
+static void load_volume_table()
+{
+    int i;
+    int ret;
+	
+	if(fstab != NULL) {
+		printf("already load volume table.\n");
+    	return;
+	}
+	
+	int emmcState = getEmmcState();
+    if(emmcState) {
+		fstab = fs_mgr_read_fstab("/etc/recovery.emmc.fstab");
+	}else {
+    	fstab = fs_mgr_read_fstab("/etc/recovery.fstab");
+	}
+	
+    if (!fstab) {
+        printf("failed to read /etc/recovery.fstab\n");
+        return;
+    }
+
+    ret = fs_mgr_add_entry(fstab, "/tmp", "ramdisk", "ramdisk");
+    if (ret < 0 ) {
+        printf("failed to add /tmp entry to fstab\n");
+        fs_mgr_free_fstab(fstab);
+        fstab = NULL;
+        return;
+    }
+
+    printf("recovery filesystem table\n");
+    printf("=========================\n");
+    for (i = 0; i < fstab->num_entries; ++i) {
+        Volume* v = &fstab->recs[i];
+        printf("  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
+               v->blk_device, v->length);
+    }
+    printf("\n");
+}
+
+static Volume* volume_for_path(const char* path) {
+    return fs_mgr_get_entry_for_mount_point(fstab, path);
+}
+
+static char* getDevicePath(char *mtdDevice) {
+	int emmcEnabled = getEmmcState();
+	char devicePath[128] = "/";
+	if(emmcEnabled) {
+		if(fstab == NULL) {
+			load_volume_table();
+		}
+	
+		if(strstr(mtdDevice, "/dev/block/rknand_")) {
+			strcat(devicePath, mtdDevice+18);
+			printf("mtd device %s\n", devicePath);
+			Volume* v = volume_for_path(devicePath);
+			if (v != NULL) {
+				printf("get volume path %s\n", v->blk_device);
+				return v->blk_device;
+			}else {
+				printf("Cannot load volume %s!\n", devicePath);
+			}
+		}
+	}
+
+	return mtdDevice;
+}
+
+
 // args:
 //    - block device (or file) to modify in-place
 //    - transfer list (blob)
@@ -356,9 +430,13 @@ Value* BlockImageUpdateFn(const char* name, State* state, int argc, Expr* argv[]
     char* linesave;
     char* wordsave;
 
-    int fd = open(blockdev_filename->data, O_RDWR);
+    printf("BlockImageUpdateFn: blockdev_filename: %s\n", blockdev_filename->data);
+    char *device = getDevicePath(blockdev_filename->data);
+    printf("BlockImageUpdateFn: after getDevicePath blockdev_filename: %s\n", device);
+
+    int fd = open(device, O_RDWR);
     if (fd < 0) {
-        ErrorAbort(state, "failed to open %s: %s", blockdev_filename->data, strerror(errno));
+        ErrorAbort(state, "failed to open %s: %s", device, strerror(errno));
         goto done;
     }
 
