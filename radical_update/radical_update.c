@@ -319,10 +319,10 @@ EXIT:
  */
 static void onStartElementNs(void *ctx,
                              const xmlChar *localname,
-                             const xmlChar *prefix,
-                             const xmlChar *URI,
-                             int nb_namespaces,
-                             const xmlChar **namespaces,
+                             const xmlChar *prefix __attribute__((unused)),
+                             const xmlChar *URI __attribute__((unused)),
+                             int nb_namespaces __attribute__((unused)),
+                             const xmlChar **namespaces __attribute__((unused)),
                              int nb_attributes,
                              int nb_defaulted,
                              const xmlChar **attributes)
@@ -420,10 +420,10 @@ EXIT:
 /**
  * restore fws_in_ota_ver 流程中, 对 radical_update_cfg_xml 中 element (end) 的解析和处理的具体实现. 
  */
-static void onEndElementNs(void* ctx,
+static void onEndElementNs(void* ctx __attribute__((unused)),
                            const xmlChar* localname,
-                           const xmlChar* prefix,
-                           const xmlChar* URI)
+                           const xmlChar* prefix __attribute__((unused)),
+                           const xmlChar* URI __attribute__((unused)))
 {
     V("element ends, tag : %s.", localname);
 }
@@ -431,7 +431,7 @@ static void onEndElementNs(void* ctx,
 /**
  * 执行传入的 item_cmd(ru_item_apply_cmd).
  */
-static int execItemApplyCmd(void* pExecutantData, const char* pOp, int argc, char** argv)
+static int execItemApplyCmd(void* pExecutantData __attribute__((unused)), const char* pOp, int argc, char** argv)
 {
     int ret = 0;
     V("enter. pOp = %s, argc = %d", pOp, argc);
@@ -507,7 +507,7 @@ EXIT:
  * 将传入的 ru_item_apply_cmd, 转换为 item_restore_cmd, 并执行. 
  */
 // .CP : 
-static int convertItemApplyCmdToRestoreAndExec(void* pExecutantData, const char* pOp, int argc, char** argv)
+static int convertItemApplyCmdToRestoreAndExec(void* pExecutantData __attribute__((unused)), const char* pOp, int argc, char** argv)
 {
     int ret = 0;
     V("enter. pOp = %s, argc = %d", pOp, argc);

@@ -61,6 +61,7 @@ extern "C" {
 #include "recovery_utils.h"
 
 #ifdef USE_RADICAL_UPDATE
+// #error
 #include "radical_update.h"
 #endif
 
@@ -1054,6 +1055,7 @@ void get_auto_sdcard_update_path(char **path) {
 	}
 }
 
+#ifdef USE_BOARD_ID
 int handle_board_id() {
 	printf("resize /system \n");
 	Volume* v = volume_for_path("/system");
@@ -1103,6 +1105,7 @@ int handle_board_id() {
 
 	return 0;
 }
+#endif
 
 
 char* findPackageAndMountUsbDevice(const char *path) {
@@ -1592,7 +1595,8 @@ main(int argc, char **argv) {
 
 	//ui->SetBackground(RecoveryUI::NONE);
 	ui->Print("Recovery system v5.0 \n\n");
-	printf("Recovery system v5.0 \n");
+	// printf("Recovery system v5.0 \n");
+	I("Recovery system v5.0, built at '%s', on '%s'.", __TIME__, __DATE__);
     if (show_text) ui->ShowText(true);
 
     struct selinux_opt seopts[] = {
@@ -1767,7 +1771,6 @@ main(int argc, char **argv) {
 			}
 
 #ifdef USE_RADICAL_UPDATE
-// #error
             LOGD("to wipe radical_update_partition. \n");
             if ( 0 != erase_volume("/radical_update") ) 
             {
@@ -1794,7 +1797,6 @@ main(int argc, char **argv) {
         }
         
 #ifdef USE_RADICAL_UPDATE
-// #error
         LOGD("to wipe radical_update_partition. \n");
         if ( 0 != erase_volume("/radical_update") ) 
         {
@@ -1809,10 +1811,16 @@ main(int argc, char **argv) {
         I("to wipe /cache.");
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
         if (status != INSTALL_SUCCESS) ui->Print("Cache wipe failed.\n");
+
     } else if (!just_exit) {
-        
+
 #ifdef USE_RADICAL_UPDATE
-        ensure_path_mounted("/radical_update");
+        LOGD("to mount ru_partition.");
+        if ( 0 != ensure_path_mounted(RU_PARTITION_MOUNT_PATH) )
+        {
+            SET_ERROR_AND_JUMP("fail to mount ru_partition.", status, INSTALL_ERROR, HANDLE_STATUS);
+        }
+
         /* 若 ru 已经被 应用, 则... */
         if ( RadicalUpdate_isApplied() )
         {
@@ -1820,7 +1828,12 @@ main(int argc, char **argv) {
             ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
             ui->ShowText(true);
 	        ui->Print("Try to roll GPU driver back to version before ru_pkg installed. \n");
-            ensure_path_mounted("/system");
+
+            if ( 0 != ensure_path_mounted(SYSTEM_PARTITION_MOUNT_PATH) )
+            {
+                SET_ERROR_AND_JUMP("fail to mount system_partition.", status, INSTALL_ERROR, HANDLE_STATUS);
+            }
+
             /* 回滚(restore) 被 ru 更新的固件 module, 若 "成功", 则...  */
             if ( 0 == RadicalUpdate_restoreFirmwaresInOtaVer() )
             {
@@ -1842,6 +1855,8 @@ main(int argc, char **argv) {
                     ui->ShowText(false);
                 }
             }
+            
+            ensure_path_unmounted(SYSTEM_PARTITION_MOUNT_PATH);
         }
         else
         {
@@ -1849,12 +1864,15 @@ main(int argc, char **argv) {
             status = INSTALL_NONE;  // No command specified
             ui->SetBackground(RecoveryUI::NO_COMMAND);
         }
+
+        ensure_path_unmounted(RU_PARTITION_MOUNT_PATH);
 #else
         status = INSTALL_NONE;  // No command specified
         ui->SetBackground(RecoveryUI::NO_COMMAND);
 #endif
     }
 
+HANDLE_STATUS :
     if (status == INSTALL_ERROR || status == INSTALL_CORRUPT) {
         copy_logs();
         ui->SetBackground(RecoveryUI::ERROR);

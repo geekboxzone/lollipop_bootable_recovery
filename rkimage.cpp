@@ -1918,13 +1918,15 @@ int install_rkimage(const char* update_file) {
 #endif
 
 #ifdef USE_RADICAL_UPDATE
-    ensure_path_mounted("/radical_update");
-    ensure_path_mounted("/system");
+    ensure_path_mounted("RU_PARTITION_MOUNT_PATH");
+    ensure_path_mounted("SYSTEM_PARTITION_MOUNT_PATH");
     if ( RadicalUpdate_isApplied() )
     {
         I("a ru_pkg is applied, to reset the flag 'ru_is_applied' befor install rk_img");
         RadicalUpdate_restoreFirmwaresInOtaVer();
     }
+    ensure_path_unmounted(RU_PARTITION_MOUNT_PATH);
+    ensure_path_unmounted(SYSTEM_PARTITION_MOUNT_PATH);
 #endif
 
 	if( !strncmp(update_file, "/mnt/external_sd", 16) ) {

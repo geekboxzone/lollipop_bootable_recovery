@@ -213,6 +213,7 @@ try_update_binary(const char *path, ZipArchive *zip, int* wipe_cache) {
 static int
 really_install_package(const char *path, int* wipe_cache, bool needs_mount, int is_ru_pkg)
 {
+    int ret = INSTALL_SUCCESS;
 	//by mmk@rock-chips.com
 	//if update loader, we hope not clear misc command.
 	//default not clear misc command, let the update-script of update.zip to clear misc when no update loader.
@@ -282,18 +283,38 @@ really_install_package(const char *path, int* wipe_cache, bool needs_mount, int 
 #endif
 
 #ifdef USE_RADICAL_UPDATE
-
-    // .KP : 
+    
+    // .KP : restore_fw_in_ota_ver : 
     // 无论安装 ru_pkg 还是 original_ota_pkg 之前, 都要 restore 可能的 backup_of_fws_in_ota_ver. 
     // 这样即便连续多次安装 ru_pkg, /radical_update/backup_of_fws_in_ota_ver 中保存的都是 fws_in_ota_ver. 
     // 才能保证, 后续若安装 ota_diff_pkg, 不会失败. 
 
-    ensure_path_mounted("/radical_update");
-    ensure_path_mounted("/system");
+    if ( 0 != ensure_path_mounted(RU_PARTITION_MOUNT_PATH) )
+    {
+        SET_ERROR_AND_JUMP("fail to mount ru_partition", ret, INSTALL_ERROR, EXIT);
+    }
+    if ( 0 != ensure_path_mounted(SYSTEM_PARTITION_MOUNT_PATH) )
+    {
+        SET_ERROR_AND_JUMP("fail to mount system_partition", ret, INSTALL_ERROR, EXIT);
+    }
+
     if ( RadicalUpdate_isApplied() )
     {
         I("a ru_pkg is applied, to restore backup_of_fws_in_ota_ver to system_partition.");
-        RadicalUpdate_restoreFirmwaresInOtaVer();
+        CHECK_FUNC_CALL( RadicalUpdate_restoreFirmwaresInOtaVer() , ret, EXIT);
+    }
+    else 
+    {
+        D("no ru_pkg is applied.");
+    }
+    
+    if ( 0 != ensure_path_unmounted(RU_PARTITION_MOUNT_PATH) )
+    {
+        SET_ERROR_AND_JUMP("fail to unmount ru_partition", ret, INSTALL_ERROR, EXIT);
+    }
+    if ( 0 != ensure_path_unmounted(SYSTEM_PARTITION_MOUNT_PATH) )
+    {
+        SET_ERROR_AND_JUMP("fail to unmount system_partition", ret, INSTALL_ERROR, EXIT);
     }
 #endif
 
@@ -301,13 +322,14 @@ really_install_package(const char *path, int* wipe_cache, bool needs_mount, int 
      */
     ui->Print("Installing update...\n");
     ui->SetEnableReboot(false);
-    int result = try_update_binary(path, &zip, wipe_cache);
+    ret = try_update_binary(path, &zip, wipe_cache);
     ui->SetEnableReboot(true);
     ui->Print("\n");
 
     sysReleaseMap(&map);
 
-    return result;
+EXIT:
+    return ret;
 }
 
 /**
@@ -326,6 +348,8 @@ install_package(const char* path, int* wipe_cache, const char* install_file,
                 bool needs_mount, int is_ru_pkg)
 {
     FILE* install_log = fopen_path(install_file, "w");
+    int ret = INSTALL_SUCCESS;
+
     if (install_log) {
         fputs(path, install_log);
         fputc('\n', install_log);
@@ -361,20 +385,41 @@ install_package(const char* path, int* wipe_cache, const char* install_file,
 
 #ifdef USE_RADICAL_UPDATE
     if ( is_ru_pkg ) {
-        D("installed a ru_pkg, to apply radical_update to system_partition.");
-        ensure_path_mounted("/radical_update");
-        ensure_path_mounted("/system");
+        I("installed a ru_pkg, to apply radical_update to system_partition.");
 
-        I("to apply ru_pkg.");
-        RadicalUpdate_tryToApplyRadicalUpdate();
+        if ( 0 != ensure_path_mounted(RU_PARTITION_MOUNT_PATH) )
+        {
+            SET_ERROR_AND_JUMP("fail to mount ru_partition.", ret, INSTALL_ERROR, EXIT);
+        }
+        if ( 0 != ensure_path_mounted(SYSTEM_PARTITION_MOUNT_PATH) )
+        {
+            SET_ERROR_AND_JUMP("fail to mount system_partition.", ret, INSTALL_ERROR, EXIT);
+        }
+
+        if ( 0 != RadicalUpdate_tryToApplyRadicalUpdate() )
+        {
+            SET_ERROR_AND_JUMP("fail to apply radical_update.", ret, INSTALL_ERROR, EXIT);
+        }
         
         D("to delete ru_pkg '%s' after being applied.", path);
         unlink(path);
+        
+        if ( 0 != ensure_path_unmounted(RU_PARTITION_MOUNT_PATH) )
+        {
+            SET_ERROR_AND_JUMP("fail to unmount ru_partition.", ret, INSTALL_ERROR, EXIT);
+        }
+        if ( 0 != ensure_path_unmounted(SYSTEM_PARTITION_MOUNT_PATH) )
+        {
+            SET_ERROR_AND_JUMP("fail to unmount system_partition.", ret, INSTALL_ERROR, EXIT);
+        }
     }
     else {
-        I("installed an original_ota_pkg, do not apply radical_update to system_partition, there might be incompatibility between modules in ru_ver and ota_ver.");
+        I("installed an original_ota_pkg, "
+            "do not apply radical_update to system_partition, "
+            "there might be incompatibility between modules in ru_ver and ota_ver.");
     }
 #endif
 
+EXIT:
     return result;
 }

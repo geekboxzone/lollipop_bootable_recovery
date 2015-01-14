@@ -78,7 +78,7 @@
  */
 
 // dummy 实现, 编译需要. 
-void ui_print(const char* format, ...) 
+void ui_print(const char* format __attribute__((unused)), ...) 
 {
 }
 

@@ -193,6 +193,9 @@ typedef unsigned char boolean;
 #define FALSE       ( (boolean)(0) )
 /*-------------------------------------------------------*/
 
+#define RU_PARTITION_MOUNT_PATH     "/radical_update"
+#define SYSTEM_PARTITION_MOUNT_PATH     "/system"
+
 // fopen a file, mounting volumes and making parent dirs as necessary.
 FILE* fopen_path(const char *path, const char *mode);
 
