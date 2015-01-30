@@ -1881,6 +1881,7 @@ HANDLE_STATUS :
     Device::BuiltinAction after = shutdown_after ? Device::SHUTDOWN : Device::REBOOT;
     if (status != INSTALL_SUCCESS) {
         I("install failed, 'status' : %d; to prompt user and wait.", status);
+        ui->ShowText(true);
         Device::BuiltinAction temp = prompt_and_wait(device, status);
         if (temp != Device::NO_ACTION) after = temp;
     }
