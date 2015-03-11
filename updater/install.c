@@ -49,6 +49,7 @@
 #include "mtdutils/rk29.h"
 #include "install.h"
 #include "emmcutils/rk_emmcutils.h"
+#include "tune2fs.h"
 
 #ifdef USE_EXT4
 #include "make_ext4fs.h"
@@ -280,24 +281,24 @@ Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
         const MtdPartition* mtd;
         mtd = mtd_find_partition_by_name(device);
         if (mtd == NULL) {
-            printf("%s: no mtd partition named \"%s\"",
-                    name, device);
+            uiPrintf(state, "%s: no mtd partition named \"%s\"",
+                    name, location);
             result = strdup("");
             goto done;
         }
         if (mtd_mount_partition(mtd, mount_point, fs_type, 0 /* rw */) != 0) {
-            printf("mtd mount of %s failed: %s\n",
-            		device, strerror(errno));
+            uiPrintf(state, "mtd mount of %s failed: %s\n",
+                    location, strerror(errno));
             result = strdup("");
             goto done;
         }
         result = mount_point;
     } else {
-        if (mount(device, mount_point, fs_type,
+        if (mount(location, mount_point, fs_type,
                   MS_NOATIME | MS_NODEV | MS_NODIRATIME,
                   has_mount_options ? mount_options : "") < 0) {
-            printf(state, "%s: failed to mount %s at %s: %s\n",
-                    name, device, mount_point, strerror(errno));
+            uiPrintf(state, "%s: failed to mount %s at %s: %s\n",
+                    name, location, mount_point, strerror(errno));
             result = strdup("");
         } else {
             result = mount_point;
@@ -360,12 +361,12 @@ Value* UnmountFn(const char* name, State* state, int argc, Expr* argv[]) {
     scan_mounted_volumes();
     const MountedVolume* vol = find_mounted_volume_by_mount_point(mount_point);
     if (vol == NULL) {
-        printf(state, "unmount of %s failed; no such volume\n", mount_point);
+        uiPrintf(state, "unmount of %s failed; no such volume\n", mount_point);
         result = strdup("");
     } else {
         int ret = unmount_mounted_volume(vol);
         if (ret != 0) {
-           printf(state, "unmount of %s failed (%d): %s\n",
+           uiPrintf(state, "unmount of %s failed (%d): %s\n",
                     mount_point, ret, strerror(errno));
         }
         result = mount_point;
@@ -2134,6 +2135,37 @@ Value* EnableRebootFn(const char* name, State* state, int argc, Expr* argv[]) {
     return StringValue(strdup("t"));
 }
 
+Value* Tune2FsFn(const char* name, State* state, int argc, Expr* argv[]) {
+    if (argc == 0) {
+        return ErrorAbort(state, "%s() expects args, got %d", name, argc);
+    }
+
+    char** args = ReadVarArgs(state, argc, argv);
+    if (args == NULL) {
+        return ErrorAbort(state, "%s() could not read args", name);
+    }
+
+    int i;
+    char** args2 = malloc(sizeof(char*) * (argc+1));
+    // Tune2fs expects the program name as its args[0]
+    args2[0] = strdup(name);
+    for (i = 0; i < argc; ++i) {
+       args2[i + 1] = args[i];
+    }
+    int result = tune2fs_main(argc + 1, args2);
+    for (i = 0; i < argc; ++i) {
+        free(args[i]);
+    }
+    free(args);
+
+    free(args2[0]);
+    free(args2);
+    if (result != 0) {
+        return ErrorAbort(state, "%s() returned error code %d", name, result);
+    }
+    return StringValue(strdup("t"));
+}
+
 void RegisterInstallFunctions() {
     RegisterFunction("mount", MountFn);
     RegisterFunction("is_mounted", IsMountedFn);
@@ -2186,4 +2218,5 @@ void RegisterInstallFunctions() {
     RegisterFunction("set_stage", SetStageFn);
 
     RegisterFunction("enable_reboot", EnableRebootFn);
+    RegisterFunction("tune2fs", Tune2FsFn);
 }
