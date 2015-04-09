@@ -282,23 +282,23 @@ Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
         mtd = mtd_find_partition_by_name(device);
         if (mtd == NULL) {
             uiPrintf(state, "%s: no mtd partition named \"%s\"",
-                    name, location);
+                    name, device);
             result = strdup("");
             goto done;
         }
         if (mtd_mount_partition(mtd, mount_point, fs_type, 0 /* rw */) != 0) {
             uiPrintf(state, "mtd mount of %s failed: %s\n",
-                    location, strerror(errno));
+                    device, strerror(errno));
             result = strdup("");
             goto done;
         }
         result = mount_point;
     } else {
-        if (mount(location, mount_point, fs_type,
+        if (mount(device, mount_point, fs_type,
                   MS_NOATIME | MS_NODEV | MS_NODIRATIME,
                   has_mount_options ? mount_options : "") < 0) {
             uiPrintf(state, "%s: failed to mount %s at %s: %s\n",
-                    name, location, mount_point, strerror(errno));
+                    name, device, mount_point, strerror(errno));
             result = strdup("");
         } else {
             result = mount_point;
