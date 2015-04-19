@@ -1611,8 +1611,15 @@ main(int argc, char **argv) {
     printf("Starting recovery (pid %d) on %s", getpid(), ctime(&start));
 
     load_volume_table();
-	SetSdcardRootPath();
-    ensure_path_mounted(LAST_LOG_FILE);
+    SetSdcardRootPath();
+    for(int n = 0; n < 2; n++) {
+        if(0 == ensure_path_mounted(LAST_LOG_FILE)){
+            break;
+        }else {
+            printf("delay 1sec\n");
+            sleep(1);
+        }
+    }
     rotate_last_logs(KEEP_LOG_COUNT);
     LOGD("to dump args befor get_args() : \n");
     dumpCmdArgs(argc, argv, 1);
