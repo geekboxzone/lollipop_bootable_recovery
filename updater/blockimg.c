@@ -764,19 +764,26 @@ Value* BlockImageUpdateFn(const char* name, State* state, int argc, Expr* argv[]
             rss.p_remain = (tgt->pos[1] - tgt->pos[0]) * BLOCKSIZE;
             check_lseek(fd, (off64_t)tgt->pos[0] * BLOCKSIZE, SEEK_SET);
 
+            int ret;
             if (style[0] == 'i') {      // imgdiff
-                ApplyImagePatch(buffer, src_blocks * BLOCKSIZE,
-                                &patch_value,
-                                &RangeSinkWrite, &rss, NULL, NULL);
+                ret = ApplyImagePatch(buffer, src_blocks * BLOCKSIZE,
+                                      &patch_value,
+                                      &RangeSinkWrite, &rss, NULL, NULL);
             } else {
-                ApplyBSDiffPatch(buffer, src_blocks * BLOCKSIZE,
-                                 &patch_value, 0,
-                                 &RangeSinkWrite, &rss, NULL);
+                ret = ApplyBSDiffPatch(buffer, src_blocks * BLOCKSIZE,
+                                       &patch_value, 0,
+                                       &RangeSinkWrite, &rss, NULL);
+            }
+
+            if (ret != 0) {
+                ErrorAbort(state, "patch failed\n");
+                goto done;
             }
 
             // We expect the output of the patcher to fill the tgt ranges exactly.
             if (rss.p_block != tgt->count || rss.p_remain != 0) {
-                fprintf(stderr, "range sink underrun?\n");
+                ErrorAbort(state, "range sink underrun?\n");
+                goto done;
             }
 
             blocks_so_far += tgt->size;
@@ -800,7 +807,8 @@ Value* BlockImageUpdateFn(const char* name, State* state, int argc, Expr* argv[]
                     range[1] = (tgt->pos[i*2+1] - tgt->pos[i*2]) * (uint64_t)BLOCKSIZE;
 
                     if (ioctl(fd, BLKDISCARD, &range) < 0) {
-                        printf("    blkdiscard failed: %s\n", strerror(errno));
+                        ErrorAbort(state, "    blkdiscard failed: %s\n", strerror(errno));
+                        goto done;
                     }
                 }
 
@@ -809,8 +817,8 @@ Value* BlockImageUpdateFn(const char* name, State* state, int argc, Expr* argv[]
                 printf("  ignoring erase (not block device)\n");
             }
         } else {
-            fprintf(stderr, "unknown transfer style \"%s\"\n", style);
-            exit(1);
+            ErrorAbort(state, "unknown transfer style \"%s\"\n", style);
+            goto done;
         }
     }
 
@@ -821,13 +829,19 @@ Value* BlockImageUpdateFn(const char* name, State* state, int argc, Expr* argv[]
     printf("wrote %d blocks; expected %d\n", blocks_so_far, total_blocks);
     printf("max alloc needed was %zu\n", buffer_alloc);
 
-  done:
+done:
     free(transfer_list);
     FreeValue(blockdev_filename);
     FreeValue(transfer_list_value);
     FreeValue(new_data_fn);
     FreeValue(patch_data_fn);
-    return StringValue(success ? strdup("t") : strdup(""));
+    if (success) {
+        return StringValue(strdup("t"));
+    } else {
+        // NULL will be passed to its caller at Evaluate() and abort the OTA
+        // process.
+        return NULL;
+    }
 }
 
 Value* RangeSha1Fn(const char* name, State* state, int argc, Expr* argv[]) {
@@ -870,11 +884,11 @@ Value* RangeSha1Fn(const char* name, State* state, int argc, Expr* argv[]) {
     digest = SHA_final(&ctx);
     close(fd);
 
-  done:
+done:
     FreeValue(blockdev_filename);
     FreeValue(ranges);
     if (digest == NULL) {
-        return StringValue(strdup(""));
+        return NULL;
     } else {
         return StringValue(PrintSha1(digest));
     }
