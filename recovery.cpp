@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #include <ctype.h>
 #include <dirent.h>
 #include <fs_mgr.h>
@@ -107,6 +106,8 @@ static const char *TEMPORARY_INSTALL_FILE = "/tmp/last_install";
 static const char *SIDELOAD_TEMP_DIR = "/tmp/sideload";
 static const char *AUTO_FACTORY_UPDATE_TAG = "/FirmwareUpdate/auto_sd_update.tag";
 static const char *AUTO_FACTORY_UPDATE_PACKAGE = "/FirmwareUpdate/update.img";
+static const char *auto_update_package = "/mnt/usb_storage/update.zip";
+static const char *auto_update_rkimage = "/mnt/usb_storage/update.img";
 static const char *DATA_PARTITION_NAME = "userdata";
 static const char *DATABK_PARTITION_NAME = "databk";
 static const char *ERASE_ALL_FLASH_REASON = "WipeAllFlash";
@@ -1197,6 +1198,52 @@ int handle_board_id() {
 }
 #endif
 
+char* CheckAutoPackageAndMountUsbDevice(const char *path) {
+    char *fileName = strrchr(path, '/');
+    char* searchFile = (char *)malloc(128);
+    sprintf(searchFile, "%s%s", USB_ROOT, fileName);
+    printf("CheckAutoPackageAndMountUsbDevice : searchFile = %s\n", searchFile);
+
+    char usbDevice[64];
+    DIR* d;
+    struct dirent* de;
+    d = opendir("/dev/block");
+    if(d != NULL) {
+        while ( (de = readdir(d) ) ) {
+            printf("/dev/block/%s\n", de->d_name);
+            if(strncmp(de->d_name, "sd", 2) == 0) {
+                memset(usbDevice, 0, sizeof(usbDevice));
+                sprintf(usbDevice, "/dev/block/%s", de->d_name);
+                printf("try to mount usb device at %s by vfat\n", usbDevice);
+                int result = mount(usbDevice, USB_ROOT, "vfat",
+						MS_NOATIME | MS_NODEV | MS_NODIRATIME, "shortname=mixed,utf8");
+                if(result != 0) {
+                    printf("try to mount usb device %s by ntfs\n", usbDevice);
+                    result = mount(usbDevice, USB_ROOT, "ntfs",
+							MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
+                }
+
+                if(result == 0) {
+                    //find update package
+                    if(access(searchFile, F_OK) != 0) {
+                        //unmount the usb device
+                        umount(USB_ROOT);
+                    }else {
+                        printf("find usb update package.\n");
+                        closedir(d);
+                        umount(USB_ROOT);
+                        return searchFile;
+                    }
+                }
+            }
+        }
+    }
+
+    closedir(d);
+    return NULL;
+}
+
+
 
 char* findPackageAndMountUsbDevice(const char *path) {
 	char *fileName = strrchr(path, '/');
@@ -1637,6 +1684,22 @@ main(int argc, char **argv) {
     int factory_mode_en = 0;
     char *factory_mode = NULL;
     bool shutdown_after = false;
+
+#ifdef USE_AUTO_USB_UPDATE    
+    if(argc <= 1){
+        auto_update_package = CheckAutoPackageAndMountUsbDevice(auto_update_package);
+        if(auto_update_package != NULL){
+            printf("Auto Update Path:%s", auto_update_package);
+            update_package = auto_update_package;
+        }else{
+            auto_update_rkimage = CheckAutoPackageAndMountUsbDevice(auto_update_rkimage);
+            if(auto_update_rkimage != NULL){
+                printf("Auto Update Path:%s", auto_update_rkimage);
+                update_rkimage = auto_update_rkimage;
+            }
+        }
+    }
+#endif
 
     int arg;
     while ((arg = getopt_long(argc, argv, "", OPTIONS, NULL)) != -1) {

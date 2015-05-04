@@ -80,6 +80,10 @@ LOCAL_STATIC_LIBRARIES := \
     libcrc32 \
     librk_emmcutils  
 
+ifeq ($(RECOVERY_AUTO_USB_UPDATE), true)
+    LOCAL_CFLAGS += -DUSE_AUTO_USB_UPDATE
+endif	
+
 ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     LOCAL_CFLAGS += -DUSE_EXT4
     LOCAL_C_INCLUDES += system/extras/ext4_utils system/vold
