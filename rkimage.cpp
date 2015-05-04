@@ -1980,6 +1980,37 @@ int install_rkimage(const char* update_file) {
 		goto update_error;
 	}
 
+	ui->Print("Update uboot.img...\n");
+	result = write_image("uboot", "/uboot", 0);
+	if(result == -4) {
+		ui->Print("no uboot.img so ignore\n");
+	}else if(result == 0) {
+		ui->Print("Check uboot.img...\n");
+		result = image_compare("uboot", "/uboot", 0);
+		if(result) {
+			ui->Print("Failed(%d)\n", result);
+			goto update_error;
+		}
+	}else {
+		ui->Print("Failed(%d)\n", result);
+		goto update_error;
+	}
+
+	ui->Print("Update trust.img...\n");
+	result = write_image("trust", "/trust", 0);
+	if(result == -4) {
+		ui->Print("no trust.img so ignore\n");
+	}else if(result == 0) {
+		ui->Print("Check trust.img...\n");
+		result = image_compare("trust", "/trust", 0);
+		if(result) {
+			ui->Print("Failed(%d)\n", result);
+			goto update_error;
+		}
+	}else {
+		ui->Print("Failed(%d)\n", result);
+		goto update_error;
+	}
 
     ui->ShowProgress(0.3, 100);
 	ui->Print("Update system...\n");
