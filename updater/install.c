@@ -1412,6 +1412,14 @@ Value* WriteRawParameterImageFn(const char* name, State* state, int argc, Expr* 
 			goto done;
 		}
 
+		fclose (dest_partition);	
+		dest_partition = fopen(v->blk_device, "wb");
+		if(dest_partition == NULL) {
+			printf("%s: no emmc partition named \"%s\"\n", name, v->blk_device);
+			result = strdup("");
+			goto done;
+		}
+
 		// update the parameter
 		ssize_t wrote = fwrite(contents->data, 1, contents->size, dest_partition);
 		success = (wrote == contents->size);
@@ -1420,7 +1428,8 @@ Value* WriteRawParameterImageFn(const char* name, State* state, int argc, Expr* 
 			printf("emmc data write to %s failed: %s\n",
 					v->blk_device, strerror(errno));
 		}
-
+		fflush (dest_partition);
+		fclose (dest_partition);
 	}else {
 		mtd_scan_partitions();
 		const MtdPartition* mtd = mtd_find_partition_by_name(partition);
