@@ -94,6 +94,24 @@ extern FILE* fopen_root_path(const char *root_path, const char *mode);
 extern int wipe_data(int wipe_flags);
 
 
+//===================== check usbboot mode ==========================
+int check_usbboot()
+{
+    char param[1024];
+    int fd, ret;
+    char *s=NULL;
+    
+    memset(param,0,1024);
+    fd= open("/proc/cmdline", O_RDONLY);
+    ret = read(fd, (char*)param, 1024);
+    printf("cmdline=%s\n",param);
+    s = strstr(param,"usbfwupdate");
+    if(s!= NULL)
+        return 0;
+    else
+        return -1;
+}
+
 //===================== check sdboot mode ==========================
 int check_sdboot(void)
 {

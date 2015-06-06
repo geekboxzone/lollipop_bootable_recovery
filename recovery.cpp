@@ -13,6 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifndef _U
+#define _U _CTYPE_U
+#endif
+#ifndef _L
+#define _L _CTYPE_L
+#endif
+#ifndef _N
+#define _N _CTYPE_L
+#endif
+#ifndef _X
+#define _X _CTYPE_X
+#endif
+#ifndef _P
+#define _P _CTYPE_P
+#endif
+#ifndef _B
+#define _B _CTYPE_B
+#endif
+#ifndef _C
+#define _C _CTYPE_C
+#endif
+#ifndef _S
+#define _S _CTYPE_S
+#endif
+
 #include <ctype.h>
 #include <dirent.h>
 #include <fs_mgr.h>
@@ -65,6 +90,8 @@ extern "C" {
 #include "radical_update.h"
 #endif
 
+#include "rkupdate/Upgrade.h"
+
 // #define printf(fmt, args...)     LOGD(fmt, ## args)
 
 /*---------------------------------------------------------------------------*/
@@ -85,6 +112,8 @@ static const struct option OPTIONS[] = {
   { "locale", required_argument, NULL, 'l' },
   { "stages", required_argument, NULL, 'g' },
   { "shutdown_after", no_argument, NULL, 'p' },
+  { "fw_update", required_argument, NULL, 'f'+'w' },
+  { "demo_copy", required_argument, NULL, 'd' },
   { "reason", required_argument, NULL, 'r' },
   { NULL, 0, NULL, 0 },
 };
@@ -113,6 +142,7 @@ static const char *DATABK_PARTITION_NAME = "databk";
 static const char *ERASE_ALL_FLASH_REASON = "WipeAllFlash";
 static char IN_SDCARD_ROOT[256] = "\0";
 static char EX_SDCARD_ROOT[256] = "\0";
+static char USB_DEVICE_PATH[128] = "\0";
 static char updatepath[128] = "\0";
 
 extern "C" int custom();
@@ -177,6 +207,8 @@ static RKSdBootCfgItem SdBootConfigs[] =
 void *thrd_led_func(void *arg);
 pthread_t tid;
 bool isLedFlash = false;
+bool bSDMounted = false;
+bool bUsbMounted = false;
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -241,6 +273,23 @@ static const int MAX_ARG_LENGTH = 4096;
 static const int MAX_ARGS = 100;
 
 
+void handle_upgrade_callback(char *szPrompt)
+{
+    if (ui){
+        ui->Print(szPrompt);
+        ui->Print("\n");
+    }
+}
+void handle_upgrade_progress_callback(float portion, float seconds)
+{
+    if (ui){
+        if (seconds==0)
+            ui->SetProgress(portion);
+        else
+            ui->ShowProgress(portion,seconds);
+    }
+}
+
 
 // open a given path, mounting partitions as necessary
 FILE*
@@ -270,6 +319,277 @@ check_and_fclose(FILE *fp, const char *name) {
     fflush(fp);
     if (ferror(fp)) LOGE("Error in %s\n(%s)\n", name, strerror(errno));
     fclose(fp);
+}
+
+bool parse_config(char *pConfig,VEC_SD_CONFIG &vecItem)
+{
+    printf("in parse_config\n");
+    std::stringstream configStream(pConfig);
+    std::string strLine,strItemName,strItemValue;
+    std::string::size_type line_size,pos;
+    vecItem.clear();
+    STRUCT_SD_CONFIG_ITEM item;
+    while (!configStream.eof())
+    {
+        getline(configStream,strLine);
+        line_size = strLine.size();
+        if (line_size==0)
+            continue;
+        if (strLine[line_size-1]=='\r')
+        {
+            strLine = strLine.substr(0,line_size-1);
+        }
+        printf("%s\n",strLine.c_str());
+        pos = strLine.find("=");
+        if (pos==std::string::npos)
+        {
+            continue;
+        }
+        if (strLine[0]=='#')
+        {
+            continue;
+        }
+        strItemName = strLine.substr(0,pos);
+        strItemValue = strLine.substr(pos+1);
+        strItemName.erase(0,strItemName.find_first_not_of(" "));
+        strItemName.erase(strItemName.find_last_not_of(" ")+1);
+        strItemValue.erase(0,strItemValue.find_first_not_of(" "));
+        strItemValue.erase(strItemValue.find_last_not_of(" ")+1);
+        if ((strItemName.size()>0)&&(strItemValue.size()>0))
+        {
+            item.strKey = strItemName;
+            item.strValue = strItemValue;
+            vecItem.push_back(item);
+        }
+    }
+    printf("out parse_config\n");
+    return true;
+    
+}
+
+bool parse_config_file(const char *pConfigFile,VEC_SD_CONFIG &vecItem)
+{
+    FILE *file=NULL;
+    file = fopen(pConfigFile,"rb");
+    if( !file ){
+        return false;
+    }
+    int iFileSize;
+    fseek(file,0,SEEK_END);
+    iFileSize = ftell(file);
+    fseek(file,0,SEEK_SET);
+    char *pConfigBuf=NULL;
+    pConfigBuf = new char[iFileSize+1];
+    if (!pConfigBuf)
+    {
+        fclose(file);
+        return false;
+    }
+    memset(pConfigBuf,0,iFileSize+1);
+    int iRead;
+    iRead = fread(pConfigBuf,1,iFileSize,file);
+    if (iRead!=iFileSize)
+    {
+        fclose(file);
+        delete []pConfigBuf;
+        return false;
+    }
+    fclose(file);
+    bool bRet;
+    bRet = parse_config(pConfigBuf,vecItem);
+    delete []pConfigBuf;
+    printf("out parse_config_file\n");
+    return bRet;
+}
+
+int mount_usb_device()
+{
+	char configFile[64];
+	char usbDevice[64];
+	int result;
+	DIR* d=NULL;
+	struct dirent* de;
+	d = opendir(USB_ROOT);
+	if (d)
+	{//check whether usb_root has  mounted
+		strcpy(configFile, USB_ROOT);
+		strcat(configFile, "/sd_boot_config.config");
+		if (access(configFile,F_OK)==0)
+		{
+			closedir(d);
+			return 0;
+		}
+		closedir(d);
+	}
+	else
+	{
+		if (errno==ENOENT)
+		{
+			if (mkdir(USB_ROOT,0755)!=0)
+		    {
+				printf("failed to create %s dir,err=%s!\n",USB_ROOT,strerror(errno));
+				return -1;
+			}
+		}
+		else
+		{
+			printf("failed to open %s dir,err=%s\n!",USB_ROOT,strerror(errno));
+			return -1;
+		}
+	}
+
+	d = opendir("/dev/block");
+	if(d != NULL) {
+		while(de = readdir(d)) {
+			printf("/dev/block/%s\n", de->d_name);
+			if((strncmp(de->d_name, "sd", 2) == 0) &&(isdigit(de->d_name[strlen(de->d_name)-1])!=0)){
+				memset(usbDevice, 0, sizeof(usbDevice));
+				sprintf(usbDevice, "/dev/block/%s", de->d_name);
+				printf("try to mount usb device %s by vfat", usbDevice);
+				result = mount(usbDevice, USB_ROOT, "vfat",
+						MS_NOATIME | MS_NODEV | MS_NODIRATIME, "shortname=mixed,utf8");
+				if(result != 0) {
+					printf("try to mount usb device %s by ntfs\n", usbDevice);
+					result = mount(usbDevice, USB_ROOT, "ntfs",
+							MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
+				}
+
+				if(result == 0) {
+					strcpy(USB_DEVICE_PATH,usbDevice);
+					closedir(d);
+					return 0;
+				}
+			}
+		}
+		closedir(d);
+	}
+
+	return -2;
+}
+
+void ensure_sd_mounted()
+{
+    int i;
+    for(i = 0; i < 10; i++) {
+        if(0 == ensure_path_mounted(EX_SDCARD_ROOT)){
+            bSDMounted = true;
+            break;
+        }else {
+            printf("delay 2sec\n");
+            sleep(2);
+        }
+    }
+}
+
+void ensure_usb_mounted()
+{
+	int i;
+    for(i = 0; i < 10; i++) {
+		if(0 == mount_usb_device()){
+			bUsbMounted = true;
+			break;
+		}else {
+			printf("delay 2sec\n");
+			sleep(2);
+		}
+	}
+}
+
+static bool
+get_args_from_sd(int *argc, char ***argv,bool *bmalloc)
+{
+	*bmalloc = false;
+	ensure_sd_mounted();
+	if (!bSDMounted)
+	{
+		printf("out get_args_from_sd:bSDMounted\n");
+		return false;
+	}
+	char configFile[64];
+	char arg[64];
+	strcpy(configFile, EX_SDCARD_ROOT);
+	strcat(configFile, "/sd_boot_config.config");
+	VEC_SD_CONFIG vecItem;
+	int i;
+	if (!parse_config_file(configFile,vecItem))
+	{
+		printf("out get_args_from_sd:parse_config_file\n");
+		return false;
+	}
+
+	*argv = (char **) malloc(sizeof(char *) * MAX_ARGS);
+	*bmalloc = true;
+    (*argv)[0] = strdup("recovery");
+	(*argc) = 1;
+
+	for (i=0;i<vecItem.size();i++)
+	{
+		if ((strcmp(vecItem[i].strKey.c_str(),"pcba_test")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"fw_update")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"demo_copy")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"volume_label")==0))
+		{
+			if (strcmp(vecItem[i].strValue.c_str(),"0")!=0)
+			{
+				sprintf(arg,"--%s=%s",vecItem[i].strKey.c_str(),vecItem[i].strValue.c_str());
+				printf("%s\n",arg);
+				(*argv)[*argc] = strdup(arg);
+				(*argc)++;
+			}
+		}
+	}
+	printf("out get_args_from_sd\n");
+	return true;
+
+}
+
+static bool
+get_args_from_usb(int *argc, char ***argv,bool *bmalloc)
+{
+	printf("in get_args_from_usb\n");
+	*bmalloc = false;
+	ensure_usb_mounted();
+	if (!bUsbMounted)
+	{
+		printf("out get_args_from_usb:bUsbMounted=false\n");
+		return false;
+	}
+	
+	char configFile[64];
+	char arg[64];
+	strcpy(configFile, USB_ROOT);
+	strcat(configFile, "/sd_boot_config.config");
+	VEC_SD_CONFIG vecItem;
+	int i;
+	if (!parse_config_file(configFile,vecItem))
+	{
+		printf("out get_args_from_usb:parse_config_file\n");
+		return false;
+	}
+
+	*argv = (char **) malloc(sizeof(char *) * MAX_ARGS);
+	*bmalloc = true;
+    (*argv)[0] = strdup("recovery");
+	(*argc) = 1;
+
+	for (i=0;i<vecItem.size();i++)
+	{
+		if ((strcmp(vecItem[i].strKey.c_str(),"pcba_test")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"fw_update")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"demo_copy")==0)||
+		   (strcmp(vecItem[i].strKey.c_str(),"volume_label")==0))
+		{
+			if (strcmp(vecItem[i].strValue.c_str(),"0")!=0)
+			{
+				sprintf(arg,"--%s=%s",vecItem[i].strKey.c_str(),vecItem[i].strValue.c_str());
+				printf("%s\n",arg);
+				(*argv)[*argc] = strdup(arg);
+				(*argc)++;
+			}
+		}
+	}
+	printf("out get_args_from_usb\n");
+	return true;
 }
 
 // command line args come from, in decreasing precedence:
@@ -1425,6 +1745,135 @@ void parseSDBootConfig() {
 	}
 }
 
+int do_sd_mode_update(char *pFile)
+{
+    int status=INSTALL_SUCCESS;
+    bool bRet,bUpdateIDBlock=true;
+    char *pFwPath = (char *)malloc(100);
+    strcpy(pFwPath, EX_SDCARD_ROOT);
+    if (strcmp(pFile,"1")==0)
+    {
+        strcat(pFwPath, "/sdupdate.img");
+    }
+    else if (strcmp(pFile,"2")==0)
+    {
+        strcat(pFwPath, "/sdupdate.img");
+        bUpdateIDBlock = false;
+    }
+    else
+    {
+        strcat(pFwPath, pFile);
+    }
+    //format user
+//  erase_volume(IN_SDCARD_ROOT);
+//  //format userdata
+//    if (clone_data_if_exist()) {
+//        if (erase_volume("/data")) return INSTALL_ERROR;
+//    }
+    ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
+    ui->SetProgressType(RecoveryUI::DETERMINATE);
+    printf("start sd upgrade...\n");
+
+#ifdef USE_BOARD_ID
+    ensure_path_mounted("/cust");
+    ensure_path_mounted("/system");
+    restore();
+#endif
+    if (bUpdateIDBlock)
+        bRet= do_rk_firmware_upgrade(pFwPath,(void *)handle_upgrade_callback,(void *)handle_upgrade_progress_callback);
+    else
+        bRet = do_rk_partition_upgrade(pFwPath,(void *)handle_upgrade_callback,(void *)handle_upgrade_progress_callback);
+    ui->SetProgressType(RecoveryUI::EMPTY);
+    if (!bRet)
+    {
+        status = INSTALL_ERROR;
+        printf("SD upgrade failed!\n");
+    }
+    else
+    {
+#ifdef USE_BOARD_ID
+        ensure_path_mounted("/cust");
+        ensure_path_mounted("/system");
+        custom();
+#endif
+        status = INSTALL_SUCCESS;
+//      if(bIfUpdateLoader)
+//      {
+//          bNeedClearMisc = false;
+//      }
+        bAutoUpdateComplete=true;
+        printf("SD upgrade ok.\n");
+    }
+        
+    return status;
+}
+
+int do_usb_mode_update(char *pFile)
+{
+    printf("in do_usb_mode_update\n");
+    int status=INSTALL_SUCCESS;
+    bool bRet,bUpdateIDBlock=true;
+    char szDev[100];
+    char *pFwPath = (char *)malloc(100);
+    strcpy(pFwPath, USB_ROOT);
+    if (strcmp(pFile,"1")==0)
+    {
+        strcat(pFwPath, "/sdupdate.img");
+    }
+    else if (strcmp(pFile,"2")==0)
+    {
+        strcat(pFwPath, "/sdupdate.img");
+        bUpdateIDBlock = false;
+    }
+    else
+    {
+        strcat(pFwPath, pFile);
+    }
+    //format user
+//  erase_volume(IN_SDCARD_ROOT);
+//  //format userdata
+//    if (clone_data_if_exist()) {
+//        if (erase_volume("/data")) return INSTALL_ERROR;
+//    }
+    strcpy(szDev,USB_DEVICE_PATH);
+    if (strlen(szDev)>0)
+        szDev[strlen(szDev)-1]=0;
+    
+    ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
+    ui->SetProgressType(RecoveryUI::DETERMINATE);
+    ui->Print("UDisk upgrade...\n");
+    if (access(pFwPath,F_OK)!=0)
+    {
+        ui->SetProgressType(RecoveryUI::EMPTY);
+        ui->Print("Firmware is not existed,file=%s!\n",pFwPath);
+        return INSTALL_ERROR;
+    }
+
+    if (bUpdateIDBlock)
+        bRet= do_rk_firmware_upgrade(pFwPath,(void *)handle_upgrade_callback,(void *)handle_upgrade_progress_callback,szDev);
+    else
+        bRet = do_rk_partition_upgrade(pFwPath,(void *)handle_upgrade_callback,(void *)handle_upgrade_progress_callback,2,szDev);
+    ui->SetProgressType(RecoveryUI::EMPTY);
+    if (!bRet)
+    {
+        status = INSTALL_ERROR;
+        printf("USB upgrade failed!\n");
+    }
+    else
+    {
+        status = INSTALL_SUCCESS;
+//      if(bIfUpdateLoader)
+//      {
+//          bNeedClearMisc = false;
+//      }
+        bAutoUpdateComplete=true;
+        printf("USB upgrade ok.\n");
+    }
+        
+    return status;
+}
+
+
 void checkSDRemoved() {
 	Volume* v = volume_for_path("/mnt/external_sd");
 	char *temp;
@@ -1450,6 +1899,143 @@ void checkSDRemoved() {
 		}
 	}
 }
+void checkUSBRemoved() {
+	int ret;
+
+	while(1) {
+		ret = access(USB_DEVICE_PATH, F_OK);
+
+		if(ret==-1) {
+			printf("remove USB\n");
+			break;
+		}else {
+			sleep(1);
+		}
+	}
+}
+
+int do_sd_demo_copy(char *demoPath)
+{
+	printf("in do_sd_demo_copy\n");
+	int status = INSTALL_SUCCESS;
+
+	if(ensure_path_mounted(IN_SDCARD_ROOT)) {
+		printf("mount user partition error!\n");
+		return INSTALL_ERROR;
+	}
+	ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
+	ui->SetProgressType(RecoveryUI::INDETERMINATE);
+	ui->Print("Copying demo...\n");
+	//copy demo files
+	char *srcPath = (char *)malloc(strlen(EX_SDCARD_ROOT) + 64);
+	strcpy(srcPath, EX_SDCARD_ROOT);
+	if (strcmp(demoPath,"1")==0)
+		strcat(srcPath, "/Demo");
+	else
+		strcat(srcPath, demoPath);
+	if (access(srcPath,F_OK)!=0)
+	{
+		ui->SetProgressType(RecoveryUI::EMPTY);
+		ui->Print("Demo is not existed,demo=%s!\n",srcPath);
+		free(srcPath);
+		return INSTALL_ERROR;
+	}
+
+	char *args[6];
+	args[0] = strdup("/sbin/busybox");
+	args[1] = strdup("cp");
+	args[2] = strdup("-R");
+	args[3] = strdup(srcPath);
+	args[4] = strdup(IN_SDCARD_ROOT);
+	args[5] = NULL;
+
+	pid_t child = fork();
+	if (child == 0) {
+		printf("run busybox copy demo files...\n");
+		execv(args[0], &args[1]);
+		fprintf(stderr, "run_program: execv failed: %s\n", strerror(errno));
+		_exit(1);
+	}
+	int child_status;
+	waitpid(child, &child_status, 0);
+	if (WIFEXITED(child_status)) {
+		if (WEXITSTATUS(child_status) != 0) {
+			status = INSTALL_ERROR;
+			fprintf(stderr, "run_program: child exited with status %d\n",
+					WEXITSTATUS(child_status));
+		}
+	} else if (WIFSIGNALED(child_status)) {
+		status = INSTALL_ERROR;
+		fprintf(stderr, "run_program: child terminated by signal %d\n",
+				WTERMSIG(child_status));
+	}
+
+	free(srcPath);
+	ui->SetProgressType(RecoveryUI::EMPTY);
+	return status;
+}
+int do_usb_demo_copy(char *demoPath)
+{
+	printf("in do_usb_demo_copy\n");
+	int status = INSTALL_SUCCESS;
+
+	if(ensure_path_mounted(IN_SDCARD_ROOT)) {
+		printf("mount user partition error!\n");
+		return INSTALL_ERROR;
+	}
+	ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
+	ui->SetProgressType(RecoveryUI::INDETERMINATE);
+	ui->Print("Copying demo...\n");
+	//copy demo files
+	char *srcPath = (char *)malloc(strlen(USB_ROOT) + 64);
+	strcpy(srcPath, USB_ROOT);
+	if (strcmp(demoPath,"1")==0)
+		strcat(srcPath, "/Demo");
+	else
+		strcat(srcPath, demoPath);
+
+	if (access(srcPath,F_OK)!=0)
+	{
+		ui->SetProgressType(RecoveryUI::EMPTY);
+		ui->Print("Demo is not existed,demo=%s!\n",srcPath);
+		free(srcPath);
+		return INSTALL_ERROR;
+	}
+
+	char *args[6];
+	args[0] = strdup("/sbin/busybox");
+	args[1] = strdup("cp");
+	args[2] = strdup("-R");
+	args[3] = strdup(srcPath);
+	args[4] = strdup(IN_SDCARD_ROOT);
+	args[5] = NULL;
+
+	pid_t child = fork();
+	if (child == 0) {
+		printf("run busybox copy demo files...\n");
+		execv(args[0], &args[1]);
+		fprintf(stderr, "run_program: execv failed: %s\n", strerror(errno));
+		_exit(1);
+	}
+	int child_status;
+	waitpid(child, &child_status, 0);
+	if (WIFEXITED(child_status)) {
+		if (WEXITSTATUS(child_status) != 0) {
+			status = INSTALL_ERROR;
+			fprintf(stderr, "run_program: child exited with status %d\n",
+					WEXITSTATUS(child_status));
+		}
+	} else if (WIFSIGNALED(child_status)) {
+		status = INSTALL_ERROR;
+		fprintf(stderr, "run_program: child terminated by signal %d\n",
+				WTERMSIG(child_status));
+	}
+
+	free(srcPath);
+	ui->SetProgressType(RecoveryUI::EMPTY);
+	return status;
+}
+
 
 void *thrd_led_func(void *arg) {
 	FILE * ledFd = NULL;
@@ -1643,6 +2229,10 @@ main(int argc, char **argv) {
     freopen("/dev/ttyFIQ0", "a", stderr); setbuf(stderr, NULL);
 #endif
 
+    bool bFreeArg=false;
+    bool bSDBoot=false;
+	bool bUsbBoot=false;
+
     // If this binary is started with the single argument "--adbd",
     // instead of being the normal recovery binary, it turns into kind
     // of a stripped-down version of adbd that only supports the
@@ -1657,6 +2247,10 @@ main(int argc, char **argv) {
 
     printf("Starting recovery (pid %d) on %s", getpid(), ctime(&start));
 
+	if(check_sdboot()==0)
+		bSDBoot = true;
+	else if(check_usbboot()==0)
+		bUsbBoot = true;
     load_volume_table();
     SetSdcardRootPath();
     for(int n = 0; n < 2; n++) {
@@ -1670,12 +2264,28 @@ main(int argc, char **argv) {
     rotate_last_logs(KEEP_LOG_COUNT);
     LOGD("to dump args befor get_args() : \n");
     dumpCmdArgs(argc, argv, 1);
-    get_args(&argc, &argv);
+    if (bSDBoot){
+        if(!get_args_from_sd(&argc,&argv,&bFreeArg)){
+            printf("get args from sd error\n");
+	        get_args(&argc, &argv);
+        }
+        bNeedClearMisc = false;//don't clear misc command(wipe all)
+    }else if (bUsbBoot){
+        if(!get_args_from_usb(&argc,&argv,&bFreeArg)){
+            printf("get args from usb error\n");
+	        get_args(&argc, &argv);
+        }
+		bNeedClearMisc = false;
+    }else {
+    	get_args(&argc, &argv);
+    }
     LOGD("to dump args after get_args() : \n");
     dumpCmdArgs(argc, argv, 1);
 
     const char *send_intent = NULL;
     const char *update_package = NULL;
+    const char *sdboot_update_package = NULL;
+    const char *demo_copy_path = NULL;
     const char *update_rkimage = NULL;
     int is_ru_pkg = 0;       // *update_package 是否是一个 ru_pkg. 
     char *auto_sdcard_update_path = NULL;
@@ -1726,6 +2336,16 @@ main(int argc, char **argv) {
             }
             break;
         }
+        case 'f'+'w': //fw_update
+            if((optarg)&&(!sdboot_update_package)){
+                sdboot_update_package = strdup(optarg);
+            }
+            break;
+        case 'd': //demo_copy
+            if((optarg)&&(! demo_copy_path)){
+                demo_copy_path = strdup(optarg);
+            }
+            break;
         case 'p': shutdown_after = true; break;
         case 'r': {reason = optarg; if( strcmp(reason, ERASE_ALL_FLASH_REASON)==0) wipe_allflash = 1;} break;
         case '?':
@@ -1783,7 +2403,7 @@ main(int argc, char **argv) {
 	}
 
     //boot from sdcard
-    if(!check_sdboot()) {
+    if(!check_sdboot() && !sdboot_update_package) {
 		printf("find sdfwupdate commandline!\n");
 		return sdtool_main(factory_mode, device);
 	}else {
@@ -1899,7 +2519,31 @@ main(int argc, char **argv) {
         if (status != INSTALL_SUCCESS) ui->Print("Installation aborted.\n");
         else
 	 		bAutoUpdateComplete=true;
-    } else if(auto_sdcard_update_path) {
+    } else if(sdboot_update_package){
+    	printf("bSDBoot = %d, sdboot_update_package=%s\n", bSDBoot, sdboot_update_package);
+        if (bSDBoot){
+            printf("SDBoot optarg=%s\n", optarg);
+            status = do_sd_mode_update(sdboot_update_package);
+        } else if(bUsbBoot){
+			printf("UsbBoot optarg=%s\n", optarg);
+			status = do_usb_mode_update(sdboot_update_package);
+		}
+        if (status!=INSTALL_SUCCESS){
+            SET_ERROR_AND_JUMP("fail to update from sd.", status, INSTALL_ERROR, HANDLE_STATUS);
+        }
+       
+        if(demo_copy_path){
+            erase_volume(IN_SDCARD_ROOT);
+            if (bSDBoot)
+                status = do_sd_demo_copy(demo_copy_path);
+            else if(bUsbBoot)
+                status = do_usb_demo_copy(demo_copy_path);
+        
+            if (status!=INSTALL_SUCCESS){
+                SET_ERROR_AND_JUMP("fail to copy demo.", status, INSTALL_ERROR, HANDLE_STATUS);
+            }
+        }
+    }else if(auto_sdcard_update_path) {
     	I("auto install package from sdcard!");
     	status = install_rkimage(auto_sdcard_update_path);
     	if (status == INSTALL_SUCCESS && wipe_cache) {
@@ -2039,6 +2683,25 @@ HANDLE_STATUS :
         ui->SetBackground(RecoveryUI::ERROR);
         bNeedClearMisc = true;
     }
+
+    if (bSDBoot){
+		ui->ShowText(true);
+		if (status==INSTALL_SUCCESS)
+	    	ui->Print("Doing Actions succeeded.please remove the sdcard......\n");
+		else
+	    	ui->Print("Doing Actions failed!please remove the sdcard......\n");
+		if (bSDMounted)
+            checkSDRemoved();
+    } else if (bUsbBoot) {
+        ui->ShowText(true);
+		if (status==INSTALL_SUCCESS)
+	    	ui->Print("Doing Actions succeeded.please remove the usb disk......\n");
+		else
+	    	ui->Print("Doing Actions failed!please remove the usb disk......\n");
+		if (bUsbMounted)
+	    	checkUSBRemoved();
+    }
+
     Device::BuiltinAction after = shutdown_after ? Device::SHUTDOWN : Device::REBOOT;
     if (status != INSTALL_SUCCESS) {
         I("install failed, 'status' : %d; to prompt user and wait.", status);

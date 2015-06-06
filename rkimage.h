@@ -63,6 +63,7 @@ int install_rkimage(const char* update_file);
 int write_image_from_file(const char* src, const char* dest, int woffset);
 int recover_backup(const char *root_path);
 int check_sdboot(void);
+int check_usbboot(void);
 
 #ifdef __cplusplus
 }
