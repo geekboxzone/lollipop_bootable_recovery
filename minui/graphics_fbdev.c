@@ -216,7 +216,7 @@ static gr_surface fbdev_init(minui_backend* backend) {
 
     printf("framebuffer: %d (%d x %d) double_buffer %d\n", fb_fd, gr_draw->width, gr_draw->height, double_buffered);
 
-    fbdev_blank(backend, true);
+    //fbdev_blank(backend, true);
     fbdev_blank(backend, false);
 
     return gr_draw;
