@@ -41,9 +41,13 @@ int get_bootloader_message(struct bootloader_message *out) {
       return -1;
     }
     if (strcmp(v->fs_type, "mtd") == 0) {
+#ifdef TARGET_RK3188
+        return get_bootloader_message_block_rk29(out, v);
+#else
         return get_bootloader_message_mtd(out, v);
+#endif
     } else if (strcmp(v->fs_type, "emmc") == 0) {
-   	return get_bootloader_message_block_rk29(out, v);
+   	    return get_bootloader_message_block_rk29(out, v);
         //return get_bootloader_message_block(out, v);
     }
     LOGE("unknown misc partition fs_type \"%s\"\n", v->fs_type);
@@ -57,9 +61,13 @@ int set_bootloader_message(const struct bootloader_message *in) {
       return -1;
     }
     if (strcmp(v->fs_type, "mtd") == 0) {
+#ifdef TARGET_RK3188
+        return set_bootloader_message_block_rk29(in, v);
+#else
         return set_bootloader_message_mtd(in, v);
+#endif
     } else if (strcmp(v->fs_type, "emmc") == 0) {
-	return set_bootloader_message_block_rk29(in, v);
+	    return set_bootloader_message_block_rk29(in, v);
         //return set_bootloader_message_block(in, v);
     }
     LOGE("unknown misc partition fs_type \"%s\"\n", v->fs_type);
@@ -216,7 +224,12 @@ static int set_bootloader_message_block(const struct bootloader_message *in,
 
 static int get_bootloader_message_block_rk29(struct bootloader_message *out,
                                         const Volume* v) {
+#ifdef TARGET_RK3188
+    FILE* f = fopen("/dev/block/rknand_misc", "rb");
+#else
     FILE* f = fopen(v->blk_device, "rb");
+#endif
+
     if (f == NULL) {
         LOGE("Can't open %s\n(%s)\n", v->blk_device, strerror(errno));
         return -1;
@@ -241,8 +254,11 @@ static int get_bootloader_message_block_rk29(struct bootloader_message *out,
 	
 static int set_bootloader_message_block_rk29(const struct bootloader_message *in,
                                         const Volume* v) {
-
-    FILE* f = fopen(v->blk_device, "wb+");
+#ifdef TARGET_RK3188
+        FILE* f = fopen("/dev/block/rknand_misc", "rb");
+#else
+        FILE* f = fopen(v->blk_device, "rb");
+#endif
 
     if (f == NULL) {
         LOGE("Can't open %s\n(%s)\n", v->blk_device, strerror(errno));
