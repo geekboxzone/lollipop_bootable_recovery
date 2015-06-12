@@ -255,9 +255,9 @@ static int get_bootloader_message_block_rk29(struct bootloader_message *out,
 static int set_bootloader_message_block_rk29(const struct bootloader_message *in,
                                         const Volume* v) {
 #ifdef TARGET_RK3188
-        FILE* f = fopen("/dev/block/rknand_misc", "rb");
+        FILE* f = fopen("/dev/block/rknand_misc", "wb+");
 #else
-        FILE* f = fopen(v->blk_device, "rb");
+        FILE* f = fopen(v->blk_device, "wb+");
 #endif
 
     if (f == NULL) {
