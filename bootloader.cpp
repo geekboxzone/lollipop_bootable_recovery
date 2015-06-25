@@ -224,14 +224,15 @@ static int set_bootloader_message_block(const struct bootloader_message *in,
 
 static int get_bootloader_message_block_rk29(struct bootloader_message *out,
                                         const Volume* v) {
+    FILE* f = NULL;
 #ifdef TARGET_RK3188
     if (strcmp(v->fs_type, "emmc") == 0){
-        FILE* f = fopen(v->blk_device, "rb");
+        f = fopen(v->blk_device, "rb");
     }else{
-        FILE* f = fopen("/dev/block/rknand_misc", "rb");
+        f = fopen("/dev/block/rknand_misc", "rb");
     }
 #else
-    FILE* f = fopen(v->blk_device, "rb");
+    f = fopen(v->blk_device, "rb");
 #endif
 
     if (f == NULL) {
@@ -258,14 +259,15 @@ static int get_bootloader_message_block_rk29(struct bootloader_message *out,
 	
 static int set_bootloader_message_block_rk29(const struct bootloader_message *in,
                                         const Volume* v) {
+    FILE* f = NULL;
 #ifdef TARGET_RK3188
         if (strcmp(v->fs_type, "emmc") == 0){
-            FILE* f = fopen(v->blk_device, "wb+");
+            f = fopen(v->blk_device, "wb+");
         }else{
-            FILE* f = fopen("/dev/block/rknand_misc", "wb+");
+            f = fopen("/dev/block/rknand_misc", "wb+");
         }
 #else
-        FILE* f = fopen(v->blk_device, "wb+");
+        f = fopen(v->blk_device, "wb+");
 #endif
 
     if (f == NULL) {
