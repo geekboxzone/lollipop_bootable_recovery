@@ -265,6 +265,14 @@ unsigned int gr_get_height(GRSurface* surface) {
     return surface->height;
 }
 
+unsigned int gr_get_font_cwidth(void)
+{
+    if (gr_font->cwidth > 0)
+	return gr_font->cwidth;
+    else
+	return font.cwidth;
+}
+
 static void gr_init_font(void)
 {
     gr_font = calloc(sizeof(*gr_font), 1);
