@@ -84,6 +84,7 @@ LOCAL_STATIC_LIBRARIES := \
     librkrsa\
     libgnustl_static\
     libstdc++ \
+    libutils \
     libm \
     libc \
     libedify \
