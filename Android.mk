@@ -57,7 +57,7 @@ LOCAL_CFLAGS += -D_FILE_OFFSET_BITS=64
 
 LOCAL_C_INCLUDES := \
 	$(prebuilt_stdcxx_PATH)/gnu-libstdc++/include\
-	$(prebuilt_stdcxx_PATH)/gnu-libstdc++/libs/$(TARGET_CPU_ABI)/include\
+	$(prebuilt_stdcxx_PATH)/gnu-libstdc++/libs/armeabi-v7a/include\
 	bionic \
 	bionic/libstdc++/include \
 	$(LOCAL_PATH)/rkupdate
